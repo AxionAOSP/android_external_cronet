@@ -28,12 +28,15 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 import android.content.Context;
 import android.net.Network;
 import android.net.http.ConnectionMigrationOptions;
 import android.net.http.DnsOptions;
+import android.net.http.Flags;
 import android.net.http.HttpEngine;
+import android.net.http.HttpEngineJavaClasses;
 import android.net.http.QuicOptions;
 import android.net.http.UrlRequest;
 import android.net.http.UrlResponseInfo;
@@ -41,6 +44,9 @@ import android.net.http.cts.util.HttpCtsTestServer;
 import android.net.http.cts.util.TestUrlRequestCallback;
 import android.net.http.cts.util.TestUrlRequestCallback.ResponseStep;
 import android.os.Build;
+import android.platform.test.annotations.RequiresFlagsEnabled;
+import android.platform.test.flag.junit.CheckFlagsRule;
+import android.platform.test.flag.junit.DeviceFlagsValueProvider;
 
 import androidx.test.core.app.ApplicationProvider;
 
@@ -49,6 +55,7 @@ import com.android.testutils.DevSdkIgnoreRunner;
 
 import org.junit.After;
 import org.junit.Before;
+import org.junit.Rule;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.mockito.Mockito;
@@ -70,6 +77,9 @@ public class HttpEngineTest {
     private UrlRequest mRequest;
     private HttpEngine mEngine;
     private Context mContext;
+
+    @Rule
+    public final CheckFlagsRule mCheckFlagsRule = DeviceFlagsValueProvider.createCheckFlagsRule();
 
     @Before
     public void setUp() throws Exception {
@@ -96,6 +106,41 @@ public class HttpEngineTest {
 
     private boolean isQuic(String negotiatedProtocol) {
         return negotiatedProtocol.startsWith("http/2+quic") || negotiatedProtocol.startsWith("h3");
+    }
+
+    @Test
+    @RequiresFlagsEnabled(Flags.FLAG_PRELOAD_HTTPENGINE_IN_ZYGOTE)
+    public void testHttpEngine_preload() {
+        // The assumption here is that preloading the classes
+        // should not crash the process. It's very complex
+        // to detect if a class is preloaded or not without
+        // running this test in its own individual process
+        // to ensure that no class has been loaded by some
+        // other tests. It'll be enough to ensure that calling
+        // this method does not lead to crashes.
+        try {
+            HttpEngine.preload();
+            HttpEngine.preload();
+            fail("HttpEngine can't be preloaded more than once");
+        } catch (Exception e) {
+            // Do nothing.
+        }
+    }
+
+    /** This is to confirm that the generated list of classes to be preloaded actually
+     * has something in it so it doesn't just silently break. It does not need to have
+     * everything but we assume that if it includes few essential classes then that
+     * should mean it's working as intended.
+     */
+    @Test
+    public void testHttpEngine_PreloadedClassesListContainsEssentialClasses() {
+        assertThat(HttpEngineJavaClasses.ALL_CLASSES).asList().containsAtLeast(
+                "android.net.connectivity.org.chromium.net.impl.CronetUrlRequestContext",
+                "android.net.connectivity.org.chromium.net.impl.CronetUrlRequest",
+                "android.net.connectivity.org.chromium.net.CronetEngine",
+                "android.net.http.CronetEngineWrapper");
+        assertThat(HttpEngineJavaClasses.ALL_CLASSES).asList().doesNotContain(
+                "android.net.connectivity.org.chromium.base.BuildInfo$Holder");
     }
 
     @Test
